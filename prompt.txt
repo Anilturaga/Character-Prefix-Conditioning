@@ -1,0 +1,60 @@
+<blog>
+# Character Prefix Conditioning
+
+The first in a series of problems that give a glimpse into the work we do at Cursor.
+
+## Setup
+
+When using a language model for code completion, we typically want the model to produce a completion that begins with what the user has typed.
+
+However, modern language models operate on sequences of tokens, not characters, so naively tokenizing the user's input and sending it to the model produces wrong results if the user's cursor doesn't happen to lie on a token boundary.
+
+Instead, we need an algorithm that samples a sequence of tokens conditional on a prefix of **characters**, rather than the more typical case of sampling conditional on a prefix of tokens.
+
+We call this **character prefix conditioning**, an algorithm for sampling a sequence of tokens conditioned on a character prefix.
+
+We want to sample a sequence of tokens $s = t_1, t_2, \ldots, t_n$ from a distribution specified by an autoregressive model $p(s)$ given by
+
+$$p(s) = p(t_1, t_2, \ldots, t_n) = \prod_{k=1}^n p(t_k | t_1, \ldots, t_{k-1})$$
+
+subject to the constraint that $s$ starts with a character prefix $\mathcal{P}$, i.e. $\mathcal{P}$ is a prefix of $\text{repr}(t_1) + \text{repr}(t_2) + \cdots + \text{repr}(t_n)$, where $+$ means string concatenation and repr maps a token to the characters it represents.
+
+We define $q(s) = p(s \mid s \text{ starts with } \mathcal{P})$. It's sufficient to find a way to sample autoregressively from $q(s)$, that is, to sample from $q(t_k | t_1, \ldots, t_{k-1})$ for each $k$.
+
+## Problem
+
+Can you construct an efficient algorithm for sampling from $q(t_k | t_1, \ldots, t_{k - 1})$, that minimizes calls to the original language model? A description of the algorithm is great. An actual implementation is excellent.
+</blog>
+
+<comment>
+This is harder than it looks.
+First "token-healing" doesn't work. Consider the case "app" where the most likely options are "ap|praisal" or "apple|sauce". You can't just sample all tokens that start with app, or you'd miss appraisal.
+
+Second, it's easy to come up with a naive algorithm that samples from the true distribution. It's very difficult to make this algorithm efficient.
+</comment>
+
+<comment>
+Here's an example to show why the problem is tricky. A simple approach that works in most cases is to restrict the next token sampled to match the character prefix we want to condition on.
+
+But it doesn't always work-
+
+Let's say the prefix is "I went to the store to get some applesauc". The right completion is "e.", forming the word "applesauce". But let's suppose " apples" and " applesauce" are both tokens in the vocabulary. They both match the prefix "I went to the store to get some applesauc", but " apples" is a more common token than " applesauce", so the model will give it higher probability. That means we'll sample " apples" as the next token, but that puts us in a bad spot: remember that because of how tokenizers work, we can't then sample "auce" as the next token to form the correct answer, because " applesauce" can only occur as a whole token, not as two separate tokens. Once we've sampled " apples", we'll end up sampling an awkward sequence of letters matching the remaining prefix "auc". It probably won't even form a valid English word.
+</comment>
+
+
+Example test cases for GPT4 tokenizer:
+<example>
+"The agreement was signed unconditiona"
+completion should be "lly"
+</example>
+
+<example>
+"He introduced an intermedi"
+completion should be "ary"
+</example>
+
+<example>
+"We found a hidden correla"
+completion should be "tion"
+</example>
+
