@@ -1,109 +1,137 @@
-from transformers import AutoTokenizer
 from typing import Dict, List, Optional
 import re
+import tiktoken
+from tiktoken._educational import *
+enc = tiktoken.get_encoding("cl100k_base")
+len(enc._mergeable_ranks.keys())
+list(enc._mergeable_ranks.keys())[-10]
+enc._mergeable_ranks
+vocab = enc._mergeable_ranks
+# tokenizer = SimpleBytePairEncoding.from_tiktoken("cl100k_base")
+# vocab = tokenizer.mergeable_ranks
 
-def custom_encode(text: str, tokenizer) -> list:
+
+def find_matching_tokens(prefix: str, vocab: Dict[bytes, int]) -> List[bytes]:
     """
-    Custom implementation of tokenizer.encode that uses the tokenizer's vocabulary
-    for autocompletion purposes
+    Find all tokens in vocabulary that start with the given prefix
     
     Args:
-        text: The input string to tokenize
-        tokenizer: The tokenizer object with vocabulary
+        prefix: String prefix to match against
+        vocab: Dictionary mapping token bytes to token ids
         
     Returns:
-        List of integer tokens suitable for autocompletion
+        List of tokens that match the prefix
     """
-    # Get the vocabulary from the tokenizer
-    vocab = tokenizer.get_vocab()
+    # Convert prefix to bytes for matching
+    prefix_bytes = prefix.encode('utf-8')
     
-    # Initialize output tokens list
-    tokens = []
-    
-    # Add BOS token if the tokenizer uses it
-    if tokenizer.bos_token_id is not None:
-        tokens.append(tokenizer.bos_token_id)
-    
-    # Simple greedy tokenization algorithm
-    remaining_text = text
-    while remaining_text:
-        best_token = None
-        best_token_id = None
-        best_token_len = 0
-        
-        # Check all tokens in vocabulary for the best match at current position
-        for token, token_id in vocab.items():
-            # Skip special tokens in the vocab
-            if token in tokenizer.all_special_tokens:
-                continue
-                
-            # Convert token to actual string if it's a byte-level token
-            token_str = token
-            if token.startswith('Ġ'):  # Common in some tokenizers for space prefix
-                token_str = ' ' + token[1:]
-            elif token.startswith('##'):  # Common in BERT tokenizers
-                token_str = token[2:]
-                
-            # Check if the current token matches the beginning of remaining text
-            if remaining_text.startswith(token_str) and len(token_str) > best_token_len:
-                best_token = token_str
-                best_token_id = token_id
-                best_token_len = len(token_str)
-        
-        # If no match found in vocab, use unknown token
-        if best_token is None:
-            tokens.append(tokenizer.unk_token_id)
-            remaining_text = remaining_text[1:]  # Skip one character
+    # Find all matching tokens
+    matches = []
+    for token in vocab.keys():
+        # Convert token to string representation
+        if token.startswith(b'\xc4\xa0'): # Ġ in UTF-8
+            token_str = b' ' + token[2:] 
+        elif token.startswith(b'##'):
+            token_str = token[2:]
         else:
-            tokens.append(best_token_id)
-            remaining_text = remaining_text[len(best_token):]
-    
-    # No EOS token for autocompletion use case
-    
-    return tokens
+            token_str = token
+            
+        if token_str.startswith(prefix_bytes):
+            matches.append(token)
+            
+    return matches
 
-def string_to_tokens(text: str, model_name: str = "Qwen/Qwen2.5-0.5B-Instruct") -> list:
+def find_tokens_from_right(sentence: str, vocab: Dict[bytes, int]) -> List[List[bytes]]:
     """
-    Convert a string to tokens using transformers tokenizer
+    Find matching tokens by taking progressively longer prefixes from the right side
     
     Args:
-        text: The input string to tokenize
-        model_name: Name of the model/tokenizer to use
+        sentence: Input sentence to analyze
+        vocab: Dictionary mapping token bytes to token ids
         
     Returns:
-        List of integer tokens
+        List of lists, where each inner list contains tokens matching the prefix
+        starting from that position
     """
-    # Get the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    matches_by_position = []
     
-    # Use our custom encoding function instead of tokenizer.encode
-    tokens = custom_encode(text, tokenizer)
-    
-    return tokens
+    # Start from the end and work backwards
+    for i in range(len(sentence)):
+        prefix = sentence[-(i+1):]  # Take i+1 chars from the right
+        matching_tokens = find_matching_tokens(prefix, vocab)
+        
+        # Filter tokens based on whether they maintain token boundaries when re-encoded
+        filtered_tokens = []
+        for token in matching_tokens:
+            # Convert token to string representation
+            if token.startswith(b'\xc4\xa0'): # Ġ in UTF-8
+                token_str = b' ' + token[2:]
+            elif token.startswith(b'##'):
+                token_str = token[2:]
+            else:
+                token_str = token
+                
+            # Create test sentence by replacing prefix with this token
+            test_str = sentence[:-(i+1)].encode('utf-8') + token_str
+            # print(token_str,":",test_str)
+            # Re-encode the test sentence
+            test_tokens = enc.encode(test_str.decode('utf-8', errors='ignore'))
+            
+            # Get tokens for original sentence up to the replacement point
+            original_tokens = enc.encode(sentence[:-(i+1)])
+            # Combine with our test token
+            expected_tokens = original_tokens + test_tokens[-1:]
+            # Re-encode full test string to compare
+            actual_tokens = enc.encode(test_str.decode('utf-8', errors='ignore'))
+            # print(expected_tokens,":",actual_tokens)
+            # Check if tokens match except for the last one we replaced
+            if expected_tokens == actual_tokens:
+                # print("Match")
+                filtered_tokens.append(token)
+        matching_tokens = filtered_tokens
+        matches_by_position.append(matching_tokens)
+        
+    return matches_by_position
 
-def tokens_to_string(tokens: list, model_name: str = "Qwen/Qwen2.5-0.5B-Instruct") -> str:
+def analyze_token_combinations(sentence: str, vocab: Dict[bytes, int]) -> List[Dict]:
     """
-    Convert tokens back to a string
+    Analyze possible token combinations for a given sentence
     
     Args:
-        tokens: List of integer tokens
-        model_name: Name of the model/tokenizer to use
+        sentence: Input sentence to analyze
+        vocab: Dictionary mapping token bytes to token ids
         
     Returns:
-        Decoded string
+        List of dictionaries containing position, prefix and matching tokens
     """
-    # Get the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    right_matches = find_tokens_from_right(sentence, vocab)
+    combinations = []
     
-    # Convert tokens back to string
-    text = tokenizer.decode(tokens)
-    
-    return text
+    for i, matches in enumerate(right_matches):
+        if len(matches) > 0:
+            combinations.append({
+                'position': len(sentence) - i,
+                'prefix': sentence[:-(i+1)],
+                'matches': matches
+            })
+            
+    return combinations
 
 if __name__ == "__main__":
-    text = "Hello, world!"
-    tokens = string_to_tokens(text)
-    print(tokens)
-    text_from_tokens = tokens_to_string(tokens)
-    print(text_from_tokens)
-    
+    # Example usage
+    test_cases = [
+        "The agreement was signed unconditiona",
+        "He introduced an intermediar",
+        "We found a hidden correla", 
+        "I bought some apple",
+        "I am an indivi",
+        "I am indivi"
+    ]
+
+    for test_sentence in test_cases:
+        print(f"\nTesting: {test_sentence}")
+        combinations = analyze_token_combinations(test_sentence, vocab)
+                
+        print("Combinations:")
+        for c in combinations:
+            print(f"Pos {c['position']}: {c['prefix']} -> {c['matches'][:3]}... {len(c['matches'])} possible tokens")
