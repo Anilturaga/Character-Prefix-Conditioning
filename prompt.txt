@@ -44,17 +44,38 @@ Let's say the prefix is "I went to the store to get some applesauc". The right c
 
 Example test cases for GPT4 tokenizer:
 <example>
-"The agreement was signed unconditiona"
+Sentence: The agreement was signed unconditiona
 completion should be "lly"
+Actual sentence: The agreement was signed unconditionally
 </example>
 
 <example>
-"He introduced an intermedi"
-completion should be "ary"
+Sentence: He introduced an intermediar
+completion should be "y"
+Actual sentence: He introduced an intermediary
 </example>
 
 <example>
-"We found a hidden correla"
+Sentence: We found a hidden correla
 completion should be "tion"
+Actual sentence: We found a hidden correlation
+</example>
+
+<example>
+Sentence: I bought some apple
+completion should be "s"
+Actual sentence: I bought some apples
+</example>
+
+<example>
+Sentence: I am an indivi
+completion should be "dual"
+Actual sentence: I am an individual
+</example>
+
+<example>
+Sentence: I am indivi
+completion should be "sible"
+Actual sentence: I am indivisible
 </example>
 
