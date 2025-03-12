@@ -1,4 +1,7 @@
 # Character Prefix Conditioning with Back Tokenization
+Attempt to solve [Cursor's challenge on code completion sampling](https://www.cursor.com/blog/cpc).
+
+Read `prompt.txt` for better understanding of the problem.
 
 This project implements an efficient algorithm for finding token completions possibilities from a incomplete sentence.
 We essentially take the last word of the sentence and backtrack over each byte from the back.
