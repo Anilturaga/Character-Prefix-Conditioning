@@ -1,52 +1,106 @@
 # Character Prefix Conditioning with Back Tokenization
-Attempt to solve [Cursor's challenge on code completion sampling](https://www.cursor.com/blog/cpc).
 
-Read `prompt.txt` for better understanding of the problem.
-
-This project implements an efficient algorithm for finding token completions possibilities from a incomplete sentence.
-We essentially take the last word of the sentence and backtrack over each byte from the back.
-For each byte, we find the tokens that have the byte and anything right of it as a prefix.
-We then check if the token is valid by encoding the sentence before the byte and the token and checking if the encoding is the same as the encoding of the sentence. This will drastically reduce the number of completion combinations we have to generate for.
-
-It's designed to improve the performance of prefix matching for completion models.
+This repository implements a solution for [Character Prefix Conditioning](https://www.cursor.com/blog/cpc) when working with language model tokenizers.
 
 ## Overview
 
-The implementation consists of two main components:
+When generating completions with language models, we need to ensure that the model produces text that begins with what the user has already typed. However, tokenizers operate on token boundaries, not character boundaries, creating challenges when the user's cursor doesn't lie on a token boundary.
 
-1. **Token Matching Algorithm**: Finds tokens in a vocabulary that match a given prefix
-2. **Regex for word boundary detection**: Used to split the sentence into words
-3. **Byte Trie**: A trie data structure optimized for byte-level prefix matching
+This implementation provides an efficient algorithm for sampling tokens conditioned on a character prefix.
 
+## Key Features
+
+- **Trie-Based Token Matching**: Uses an optimized trie data structure for efficient prefix matching
+- **Last Word Processing**: Focuses search on the last word of input for better performance. Last word is found using a regex pattern [implemented in the tiktoken library](https://github.com/openai/tiktoken/blob/4560a8896f5fb1d35c6f8fd6eee0399f9a1a27ca/tiktoken_ext/openai_public.py#L89)
+- **Token Boundary Validation**: Ensures proper tokenization by validating token boundaries
+- **Efficient Prefix Matching**: Works backwards from the end of the last word to find all possible token combinations. This might not be the best approach, but it works.
+
+## How It Works
+
+1. The implementation builds a trie data structure from the tokenizer vocabulary
+2. When given an input string, it extracts the last word using a regex pattern
+3. Starting from the right end of the last word, it progressively tries longer prefixes
+4. For each prefix, it finds all matching tokens in the vocabulary
+5. It validates each token by checking if it maintains proper token boundaries when re-encoded
+6. Returns a list of valid tokens at each position that can be used for sampling
+
+## Examples
+
+Consider these example inputs and how the algorithm processes them:
+
+### Example 1
+Input: "The agreement was signed unconditiona"
+- Last word: "unconditiona"
+- Finds tokens that can validly complete this prefix (like "lly")
+- Enables completion to "The agreement was signed unconditionally"
+
+### Example 2
+Input: "He introduced an intermediar"
+- Last word: "intermediar"
+- Finds "y" as a valid completion token
+- Enables completion to "He introduced an intermediary"
+
+### Example 3
+Input: "I bought some apple"
+- Last word: "apple"
+- Finds "s" as a valid completion token
+- Enables completion to "I bought some apples"
+
+### Example 4
+Input: "indivi"
+- Last word: "indivi"
+- Finds "dual" or "sible" as a valid completion token
+- Enables completion to "individual" or "indivisible"
+
+### Example 5
+Input: "https:"
+- Last word: "https:"
+- Finds "://" as a valid completion token
+- Enables completion to "https://www.google.com"
+
+## Implementation Details
+
+### Trie Structure
+
+The implementation uses a specialized trie data structure to efficiently find all tokens that match a given prefix. The trie is built once from the tokenizer vocabulary and reused for all queries.
+
+### Last Word Extraction
+
+The implementation uses a regex pattern to split the input sentence into words and focuses only on the last word, which significantly improves performance by reducing the search space.
+
+Pattern is specific to the cl100k_base tokenizer and can be found [here](https://github.com/openai/tiktoken/blob/4560a8896f5fb1d35c6f8fd6eee0399f9a1a27ca/tiktoken_ext/openai_public.py#L89)
+
+### Token Boundary Validation
+
+The implementation validates each potential token by checking if it maintains proper token boundaries when re-encoded:
+
+1. Creates a test string by replacing the prefix with the candidate token
+2. Re-encodes the test string
+3. Compares the resulting tokens with the expected tokens
+4. Only keeps tokens that maintain proper boundaries
+
+This ensures that the suggested completions will work correctly when tokenized.
+
+## Usage
+
+Initialize the trie structure with your tokenizer vocabulary:
+
+```python
+trie = init_trie(vocab)
+```
+
+Analyze possible token completions for a sentence:
+
+```python
+combinations = analyze_token_combinations(sentence, vocab, trie)
+```
+
+The result contains positions, prefixes, and matching tokens that can be used for sampling.
 
 ## Files
 
 - `main.py`: Contains the full implementation of both the token analysis algorithm and the optimized trie data structure
 - `benchmark.py`: Tools to measure performance improvements between the original approach and the trie-based solution
-
-## Usage
-
-To run the token analysis with the trie-based implementation:
-
-```python
-import tiktoken
-from main import analyze_token_combinations, init_trie
-
-# Initialize the tokenizer and vocabulary
-enc = tiktoken.get_encoding("cl100k_base")
-vocab = enc._mergeable_ranks
-
-# Initialize the trie (done once)
-trie = init_trie(vocab)
-
-# Analyze token combinations for a sentence
-sentence = "The agreement was signed unconditiona"
-combinations = analyze_token_combinations(sentence, vocab, trie)
-
-# Print results
-for c in combinations:
-    print(f"Position {c['position']}: {c['prefix']} -> {len(c['matches'])} possible tokens")
-```
 
 ## Benchmarking
 
