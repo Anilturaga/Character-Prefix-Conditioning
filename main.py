@@ -25,8 +25,6 @@ class BytesTrie:
     
     def __init__(self):
         self.root = TrieNode()
-        # Cache to store pre-computed results
-        self.prefix_cache = {}
         
     def insert(self, token_bytes: bytes, original_token: bytes):
         """
@@ -56,7 +54,7 @@ class BytesTrie:
         
     def search_prefix(self, prefix_bytes: bytes) -> List[bytes]:
         """
-        Find all tokens that start with the given prefix, using cache when possible
+        Find all tokens that start with the given prefix
         
         Args:
             prefix_bytes: Prefix to search for
@@ -64,36 +62,6 @@ class BytesTrie:
         Returns:
             List of original tokens that match the prefix
         """
-        # Check if we have this prefix in our cache
-        if prefix_bytes in self.prefix_cache:
-            return self.prefix_cache[prefix_bytes]
-            
-        # Look for the longest cached prefix that is a prefix of our search term
-        longest_cached_prefix = None
-        longest_length = 0
-        
-        for cached_prefix in self.prefix_cache:
-            if prefix_bytes.startswith(cached_prefix) and len(cached_prefix) > longest_length:
-                longest_cached_prefix = cached_prefix
-                longest_length = len(cached_prefix)
-                
-        if longest_cached_prefix:
-            # Find the node for the remaining part of the prefix
-            remaining = prefix_bytes[len(longest_cached_prefix):]
-            start_node = self._find_node(longest_cached_prefix)
-            
-            # Navigate to the node for the full prefix
-            for b in remaining:
-                if not start_node or b not in start_node.children:
-                    return []
-                start_node = start_node.children[b]
-                
-            if not start_node:
-                return []
-                
-            return self._collect_tokens_iterative(start_node)
-            
-        # If no cached prefix found, navigate to the node for the full prefix
         node = self.root
         for b in prefix_bytes:
             if b not in node.children:
@@ -122,38 +90,83 @@ class BytesTrie:
                 queue.append(child)
                 
         return tokens
-    
-    def build_cache(self, min_prefix_len=1, max_prefix_len=4):
+        
+    def print_trie(self, max_depth=3, max_children=5, max_tokens=3, start_prefix=b''):
         """
-        Pre-build a cache of common prefixes for faster lookups
+        Visualize the trie structure
         
         Args:
-            min_prefix_len: Minimum prefix length to cache
-            max_prefix_len: Maximum prefix length to cache
+            max_depth: Maximum depth to visualize
+            max_children: Maximum number of children to show at each node
+            max_tokens: Maximum number of complete tokens to show at each node
+            start_prefix: Optional starting prefix to visualize a subtree
         """
-        print(f"Building prefix cache for lengths {min_prefix_len} to {max_prefix_len}...")
-        start_time = time.time()
+        print(f"\n{'='*50}")
+        print(f"TRIE VISUALIZATION (max_depth={max_depth}, max_children={max_children})")
+        print(f"{'='*50}")
         
-        # Find all possible byte sequences up to max_prefix_len
-        def collect_prefixes(node, current_prefix, results):
-            if len(current_prefix) >= min_prefix_len:
-                results.append(current_prefix)
-                
-            if len(current_prefix) >= max_prefix_len:
+        # Find the starting node
+        if start_prefix:
+            start_node = self._find_node(start_prefix)
+            if not start_node:
+                print(f"Prefix {start_prefix} not found in trie")
+                return
+            print(f"Visualizing subtree for prefix: {start_prefix}")
+        else:
+            start_node = self.root
+            print("Visualizing from root")
+            
+        # Define recursive printing function
+        def _print_node(node, prefix, depth, path=b''):
+            if depth > max_depth:
+                if node.children:
+                    print(f"{prefix}└── ... (more nodes, reached max depth)")
                 return
                 
-            for byte, child in node.children.items():
-                collect_prefixes(child, current_prefix + bytes([byte]), results)
-        
-        all_prefixes = []
-        collect_prefixes(self.root, b'', all_prefixes)
-        
-        # Cache the results for each prefix
-        for prefix in all_prefixes:
-            self.prefix_cache[prefix] = self._collect_tokens_iterative(self._find_node(prefix))
+            # Print tokens at this node if it's end of token
+            if node.is_end_of_token:
+                token_str = ', '.join([t.decode('utf-8', errors='replace') for t in node.tokens[:max_tokens]])
+                if len(node.tokens) > max_tokens:
+                    token_str += f", ... ({len(node.tokens) - max_tokens} more)"
+                print(f"{prefix}* TOKENS: {token_str}")
+                
+            # Print children
+            items = list(node.children.items())
+            if not items:
+                return
+                
+            # Sort children by byte value for consistent output
+            items.sort(key=lambda x: x[0])
             
-        end_time = time.time()
-        print(f"Cache built with {len(self.prefix_cache)} prefixes in {end_time - start_time:.2f} seconds")
+            # Show limited number of children
+            for i, (byte, child) in enumerate(items[:max_children]):
+                is_last = i == len(items[:max_children]) - 1
+                
+                # Format the byte value
+                try:
+                    byte_str = f"'{chr(byte)}'" if 32 <= byte <= 126 else f"0x{byte:02x}"
+                except:
+                    byte_str = f"0x{byte:02x}"
+                    
+                # Print the node
+                if is_last:
+                    print(f"{prefix}└── {byte_str}")
+                    new_prefix = prefix + "    "
+                else:
+                    print(f"{prefix}├── {byte_str}")
+                    new_prefix = prefix + "│   "
+                    
+                # Recursively print children
+                child_path = path + bytes([byte])
+                _print_node(child, new_prefix, depth + 1, child_path)
+                
+            # Indicate if there are more children than shown
+            if len(items) > max_children:
+                print(f"{prefix}└── ... ({len(items) - max_children} more children)")
+        
+        # Start recursive printing
+        _print_node(start_node, "", 0)
+        print(f"{'='*50}")
 
 # Global trie instance
 vocab_trie = None
@@ -185,9 +198,6 @@ def build_trie_from_vocab(vocab: Dict[bytes, int]) -> BytesTrie:
     
     build_time = time.time() - start_time
     print(f"Trie built in {build_time:.2f} seconds")
-    
-    # Build cache for optimized trie
-    trie.build_cache(min_prefix_len=2, max_prefix_len=3)
         
     total_time = time.time() - start_time
     print(f"Total initialization time: {total_time:.2f} seconds")
@@ -333,6 +343,18 @@ if __name__ == "__main__":
     # Initialize trie (this only happens once)
     trie = init_trie(vocab)
     
+    # Visualize the trie structure
+    print("\nVisualizing the trie structure (default parameters):")
+    trie.print_trie()
+    
+    # Visualize with custom parameters
+    print("\nVisualizing with custom parameters (deeper view):")
+    trie.print_trie(max_depth=4, max_children=3, max_tokens=2)
+    
+    # Visualize specific subtree
+    print("\nVisualizing subtree for prefix 'a':")
+    trie.print_trie(start_prefix=b'a')
+    
     # Example usage
     test_cases = [
         "The agreement was signed unconditiona",
@@ -340,7 +362,7 @@ if __name__ == "__main__":
         "We found a hidden correla", 
         "I bought some apple",
         "I am an indivi",
-        "I am indivi",
+        "indivi",
         "I am Anil.",
         "https:"
     ]
@@ -355,3 +377,9 @@ if __name__ == "__main__":
         print("Combinations:")
         for c in combinations:
             print(f"Pos {c['position']}: {c['prefix']} -> {c['matches'][:3]}... {len(c['matches'])} possible tokens")
+            
+        # Visualize trie for the end of each test case
+        if test_sentence and test_sentence[-1].isalpha():
+            last_char = test_sentence[-1].encode('utf-8')
+            print(f"\nVisualization for prefix ending with '{test_sentence[-1]}':")
+            # trie.print_trie(start_prefix=last_char, max_depth=2)
