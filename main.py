@@ -288,12 +288,12 @@ def find_tokens_from_right(sentence: str, vocab: Dict[bytes, int], trie=None) ->
                 token_str = token
                 
             # Create test sentence by replacing prefix with this token
-            test_str = sentence[:-len(last_word)].encode('utf-8') + last_word[:-(i+1)].encode('utf-8') + token_str
+            test_str = last_word[:-(i+1)].encode('utf-8') + token_str
             # Re-encode the test sentence
             test_tokens = enc.encode(test_str.decode('utf-8', errors='ignore'))
             
             # Get tokens for original sentence up to the replacement point
-            original_tokens = enc.encode(sentence[:-len(last_word)] + last_word[:-(i+1)])
+            original_tokens = enc.encode(last_word[:-(i+1)])
             # Combine with our test token
             expected_tokens = original_tokens + test_tokens[-1:]
             # Re-encode full test string to compare
