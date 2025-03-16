@@ -266,7 +266,7 @@ def find_tokens_from_right(sentence: str, vocab: Dict[bytes, int], trie=None) ->
     last_word = words[-1] # removed strip() to keep things like whitespace
     if not last_word:
         return matches_by_position
-    
+    print("last word",last_word)
     # Start from the end of last word and work backwards
     for i in range(len(last_word)):
         prefix = last_word[-(i+1):]  # Take i+1 chars from the right
@@ -352,19 +352,28 @@ if __name__ == "__main__":
     trie.print_trie(max_depth=4, max_children=3, max_tokens=2)
     
     # Visualize specific subtree
-    print("\nVisualizing subtree for prefix 'a':")
-    trie.print_trie(start_prefix=b'a')
+    print("\nVisualizing subtree for prefix 'user':")
+    trie.print_trie(start_prefix=b'user', max_depth=4, max_children=3, max_tokens=2)
     
     # Example usage
     test_cases = [
-        "The agreement was signed unconditiona",
-        "He introduced an intermediar",
-        "We found a hidden correla", 
-        "I bought some apple",
-        "I am an indivi",
-        "indivi",
-        "I am Anil.",
-        "https:"
+        # Basic word completion
+        "I bought some apple",  # -> apples
+        
+        # Token Healing
+        "https:",  # -> https://
+        
+        # Multiple valid completions
+        "userNa",  # -> userName or userNames
+        
+        # Hidden subword patterns
+        "We found a hidden causali",  # -> causality
+        
+        # Token boundary misalignment
+        "He introduced an intermediar",  # -> intermediary
+        
+        # Complex tokenization patterns
+        "indivi",  # -> indivisible or individual
     ]
 
     for test_sentence in test_cases:
@@ -381,5 +390,5 @@ if __name__ == "__main__":
         # Visualize trie for the end of each test case
         if test_sentence and test_sentence[-1].isalpha():
             last_char = test_sentence[-1].encode('utf-8')
-            print(f"\nVisualization for prefix ending with '{test_sentence[-1]}':")
+            # print(f"\nVisualization for prefix ending with '{test_sentence[-1]}':")
             # trie.print_trie(start_prefix=last_char, max_depth=2)
